@@ -54,6 +54,8 @@
       },
       "scripts": {
           "dev": "vite",
-          "build": "vite build"
-      }
+          "build": "vite build",
+          "preview": "vite preview"
+      },
+      "homepage": "https://Aatrox05.github.io/ERP_sanjeevan"
   }

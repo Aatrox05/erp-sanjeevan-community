@@ -49,6 +49,7 @@
         '@': path.resolve(__dirname, './src'),
       },
     },
+      base: '/ERP_sanjeevan/',
     build: {
       target: 'esnext',
       outDir: 'build',
