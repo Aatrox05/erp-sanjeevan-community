@@ -12,6 +12,7 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/events', require('./routes/eventRoutes'));
 app.use('/api/notifications', require('./routes/notifyRoutes'));
+app.use('/api/leaves', require('./routes/leaveRoutes'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
