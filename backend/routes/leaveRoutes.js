@@ -19,10 +19,8 @@ router.get('/hod/pending/:department', leaveController.getPendingLeaveRequestsFo
 // Get pending leave requests for Admin (all pending HOD-approved)
 router.get('/admin/pending', leaveController.getPendingLeaveRequestsForAdmin);
 
-// Update staff-level status (for student applications)
-router.put('/:id/staff-status', leaveController.updateStaffStatus);
-
 // Update HOD-level status (same for staff and student)
+// Flow: Staff/Student submits → HOD approves/rejects → Admin final decision
 router.put('/:id/hod-status', leaveController.updateHODStatus);
 
 // Update admin-level status (same for staff and student)

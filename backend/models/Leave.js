@@ -50,11 +50,7 @@ const leaveSchema = new mongoose.Schema(
     },
 
     // Approval workflow (same for both staff and student)
-    staffStatus: {
-      type: String,
-      enum: ['pending', 'approved', 'rejected'],
-      default: 'pending',
-    },
+    // Flow: Created → HOD Approval → Admin Final Approval
     hodStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
@@ -67,7 +63,6 @@ const leaveSchema = new mongoose.Schema(
     },
 
     // Comments at each stage
-    staffComments: String,
     hodComments: String,
     adminComments: String,
 
@@ -80,6 +75,13 @@ const leaveSchema = new mongoose.Schema(
 
     // For student: staff reference (if applicable)
     staffReference: String,
+
+    // Workflow stage tracking
+    currentStage: {
+      type: String,
+      enum: ['hod_pending', 'hod_approved', 'admin_pending', 'admin_approved', 'admin_rejected', 'hod_rejected'],
+      default: 'hod_pending',
+    },
 
     submittedDate: {
       type: Date,

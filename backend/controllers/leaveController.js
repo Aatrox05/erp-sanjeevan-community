@@ -71,9 +71,10 @@ exports.createLeaveRequest = async (req, res) => {
       days,
       reason,
       priority: priority || 'medium',
-      staffStatus: 'pending', // For staff: awaits staff confirmation; for student: awaits staff review
+      // Workflow: Directly to HOD (no staff approval stage)
       hodStatus: 'pending',
       adminStatus: 'pending',
+      currentStage: 'hod_pending',
       submittedDate: new Date(),
     });
 
@@ -140,40 +141,7 @@ exports.getPendingLeaveRequestsForAdmin = async (req, res) => {
   }
 };
 
-// Approve or reject at Staff level (for student applications)
-exports.updateStaffStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, comments } = req.body;
-
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status. Must be "approved" or "rejected"' });
-    }
-
-    const leaveRequest = await Leave.findById(id);
-    if (!leaveRequest) {
-      return res.status(404).json({ message: 'Leave request not found' });
-    }
-
-    leaveRequest.staffStatus = status;
-    if (comments) leaveRequest.staffComments = comments;
-
-    await leaveRequest.save();
-
-    // Send notification
-    const message = status === 'approved'
-      ? `Your leave request has been approved by staff and forwarded to HOD.`
-      : `Your leave request has been rejected by staff. Reason: ${comments || 'No reason provided'}`;
-
-    await sendNotification(leaveRequest.applicantId, `Leave Request ${status === 'approved' ? 'Approved' : 'Rejected'} by Staff`, message);
-
-    res.json({ message: `Leave request ${status} at staff level`, leaveRequest });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Approve or reject at HOD level (same for both staff and student applications)
+// Approve or reject at HOD level (same for both staff and student)
 exports.updateHODStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -190,19 +158,33 @@ exports.updateHODStatus = async (req, res) => {
 
     leaveRequest.hodStatus = status;
     if (comments) leaveRequest.hodComments = comments;
-    if (substituteTeacher && leaveRequest.applicantType === 'staff') {
-      leaveRequest.substituteTeacher = substituteTeacher;
-      leaveRequest.substituteStatus = 'pending';
+    
+    if (status === 'approved') {
+      leaveRequest.currentStage = 'hod_approved';
+      
+      if (substituteTeacher && leaveRequest.applicantType === 'staff') {
+        leaveRequest.substituteTeacher = substituteTeacher;
+        leaveRequest.substituteStatus = 'pending';
+      }
+      
+      // Send notification of HOD approval
+      await sendNotification(
+        leaveRequest.applicantId,
+        '✅ Leave Approved by HOD',
+        `Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days (${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}) has been APPROVED by HOD. It is now pending final approval from Admin.`
+      );
+    } else {
+      leaveRequest.currentStage = 'hod_rejected';
+      
+      // Send notification of HOD rejection
+      await sendNotification(
+        leaveRequest.applicantId,
+        '❌ Leave Rejected by HOD',
+        `Your ${leaveRequest.leaveType} leave request has been REJECTED by HOD.\nReason: ${comments || 'No reason provided'}`
+      );
     }
 
     await leaveRequest.save();
-
-    // Send notification
-    const message = status === 'approved'
-      ? `Your leave request has been approved by HOD and forwarded to Admin for final approval.`
-      : `Your leave request has been rejected by HOD. Reason: ${comments || 'No reason provided'}`;
-
-    await sendNotification(leaveRequest.applicantId, `Leave Request ${status === 'approved' ? 'Approved' : 'Rejected'} by HOD`, message);
 
     res.json({ message: `Leave request ${status} at HOD level`, leaveRequest });
   } catch (error) {
@@ -210,7 +192,7 @@ exports.updateHODStatus = async (req, res) => {
   }
 };
 
-// Approve or reject at Admin level (same for both staff and student applications)
+// Approve or reject at Admin level (same for both staff and student)
 exports.updateAdminStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -225,17 +207,35 @@ exports.updateAdminStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave request not found' });
     }
 
+    // Ensure HOD has already approved
+    if (leaveRequest.hodStatus !== 'approved') {
+      return res.status(400).json({ message: 'Leave request must be HOD approved before Admin can approve' });
+    }
+
     leaveRequest.adminStatus = status;
     if (comments) leaveRequest.adminComments = comments;
 
+    if (status === 'approved') {
+      leaveRequest.currentStage = 'admin_approved';
+      
+      // Send notification of final approval
+      await sendNotification(
+        leaveRequest.applicantId,
+        '✅ Leave APPROVED - Final Confirmation',
+        `🎉 Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days has been FINALLY APPROVED by Admin.\n\nDates: ${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}\n\nYour leave is now confirmed. ${leaveRequest.applicantType === 'staff' ? 'A substitute teacher has been assigned if applicable.' : ''}`
+      );
+    } else {
+      leaveRequest.currentStage = 'admin_rejected';
+      
+      // Send notification of final rejection
+      await sendNotification(
+        leaveRequest.applicantId,
+        '❌ Leave Rejected - Final Decision',
+        `Your ${leaveRequest.leaveType} leave request has been REJECTED by Admin.\n\nReason: ${comments || 'No reason provided'}\n\nYou may reapply if needed.`
+      );
+    }
+
     await leaveRequest.save();
-
-    // Send notification
-    const message = status === 'approved'
-      ? `Your leave request has been finally approved by Admin. Your leave is confirmed for ${leaveRequest.days} days.`
-      : `Your leave request has been rejected by Admin. Reason: ${comments || 'No reason provided'}`;
-
-    await sendNotification(leaveRequest.applicantId, `Leave Request ${status === 'approved' ? 'Approved' : 'Rejected'} by Admin`, message);
 
     res.json({ message: `Leave request ${status} at admin level`, leaveRequest });
   } catch (error) {
@@ -251,9 +251,10 @@ exports.getLeaveStatistics = async (req, res) => {
         $group: {
           _id: '$applicantType',
           totalRequests: { $sum: 1 },
-          approved: { $sum: { $cond: [{ $eq: ['$adminStatus', 'approved'] }, 1, 0] } },
-          rejected: { $sum: { $cond: [{ $eq: ['$adminStatus', 'rejected'] }, 1, 0] } },
-          pending: { $sum: { $cond: [{ $eq: ['$adminStatus', 'pending'] }, 1, 0] } },
+          approved: { $sum: { $cond: [{ $eq: ['$currentStage', 'admin_approved'] }, 1, 0] } },
+          rejected: { $sum: { $cond: [{ $in: ['$currentStage', ['admin_rejected', 'hod_rejected']] }, 1, 0] } },
+          pending_hod: { $sum: { $cond: [{ $eq: ['$currentStage', 'hod_pending'] }, 1, 0] } },
+          pending_admin: { $sum: { $cond: [{ $eq: ['$currentStage', 'admin_pending'] }, 1, 0] } },
         },
       },
     ]);
