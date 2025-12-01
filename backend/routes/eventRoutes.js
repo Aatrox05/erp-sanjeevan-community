@@ -12,3 +12,4 @@ router.put('/:id', authMiddleware, eventController.updateEvent);
 router.delete('/:id', authMiddleware, eventController.deleteEvent);
 
 module.exports = router;
+
