@@ -194,7 +194,7 @@ export default function App() {
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
           <div className="max-w-4xl mx-auto">
             <div className="text-center mb-12">
-              <h1 className="text-4xl font-bold text-gray-900 mb-4">College Management System</h1>
+              <h1 className="text-4xl font-bold text-gray-900 mb-4">ERP FOR SANJEEVAN</h1>
               <p className="text-xl text-gray-600">Login to access your dashboard</p>
             </div>
 
