@@ -38,7 +38,8 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
     addSyllabusDraft,
     submitSyllabusToHOD,
     updateSyllabus,
-    getSyllabiForStaff
+    getSyllabiForStaff,
+    addLeaveRequest
   } = useLeaveContext();
 
   // Demo staff identity (since app uses demo logins)
@@ -285,6 +286,44 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
     );
   };
 
+  // Controlled leave form for staff (same logic as student)
+  const [staffLeaveForm, setStaffLeaveForm] = useState({
+    leaveType: '',
+    startDate: '',
+    endDate: '',
+    days: 1,
+    reason: '',
+    priority: 'low',
+    department: 'Computer Science'
+  });
+
+  const submitStaffLeave = () => {
+    if (!staffLeaveForm.leaveType || !staffLeaveForm.startDate || !staffLeaveForm.endDate || !staffLeaveForm.reason) return;
+
+    addLeaveRequest({
+      staffName,
+      staffId,
+      department: staffLeaveForm.department,
+      leaveType: staffLeaveForm.leaveType,
+      startDate: staffLeaveForm.startDate,
+      endDate: staffLeaveForm.endDate,
+      days: staffLeaveForm.days,
+      reason: staffLeaveForm.reason,
+      priority: staffLeaveForm.priority,
+      requestedBy: 'staff'
+    });
+
+    addNotification({
+      userId: 'hod',
+      title: 'New Leave Request Submitted',
+      message: `${staffName} submitted a ${staffLeaveForm.leaveType} (${staffLeaveForm.startDate} to ${staffLeaveForm.endDate})` ,
+      type: 'info',
+      read: false
+    });
+
+    setStaffLeaveForm({ leaveType: '', startDate: '', endDate: '', days: 1, reason: '', priority: 'low', department: staffLeaveForm.department });
+  };
+
   const renderLeaveForm = () => (
     <Card>
       <CardHeader>
@@ -296,51 +335,43 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="leave-type">Leave Type</Label>
-            <Select>
+            <Label>Leave Type</Label>
+            <Select onValueChange={(v) => setStaffLeaveForm({ ...staffLeaveForm, leaveType: v as any })}>
               <SelectTrigger>
                 <SelectValue placeholder="Select leave type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="sick">Sick Leave</SelectItem>
-                <SelectItem value="casual">Casual Leave</SelectItem>
-                <SelectItem value="personal">Personal Leave</SelectItem>
-                <SelectItem value="emergency">Emergency Leave</SelectItem>
+                <SelectItem value="Sick Leave">Sick Leave</SelectItem>
+                <SelectItem value="Personal Leave">Personal Leave</SelectItem>
+                <SelectItem value="Emergency Leave">Emergency Leave</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="days">Number of Days</Label>
-            <Input type="number" placeholder="Enter number of days" />
+            <Label>Number of Days</Label>
+            <Input type="number" min={1} value={staffLeaveForm.days} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, days: Number(e.target.value) })} />
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="start-date">Start Date</Label>
-            <Input type="date" />
+            <Label>Start Date</Label>
+            <Input type="date" value={staffLeaveForm.startDate} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, startDate: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="end-date">End Date</Label>
-            <Input type="date" />
+            <Label>End Date</Label>
+            <Input type="date" value={staffLeaveForm.endDate} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, endDate: e.target.value })} />
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="reason">Reason for Leave</Label>
-          <Textarea 
-            placeholder="Please provide a brief reason for your leave request..."
-            className="min-h-[100px]"
-          />
+          <Label>Reason for Leave</Label>
+          <Textarea placeholder="Please provide a brief reason for your leave request..." className="min-h-[100px]" value={staffLeaveForm.reason} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, reason: e.target.value })} />
         </div>
 
         <div className="flex gap-3">
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            Submit Application
-          </Button>
-          <Button variant="outline">
-            Save as Draft
-          </Button>
+          <Button className="bg-blue-600 hover:bg-blue-700" onClick={submitStaffLeave}>Submit Application</Button>
+          <Button variant="outline">Save as Draft</Button>
         </div>
       </CardContent>
     </Card>
