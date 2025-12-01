@@ -49,21 +49,32 @@ const leaveSchema = new mongoose.Schema(
       default: 'medium',
     },
 
-    // Approval workflow (same for both staff and student)
-    // Flow: Created → HOD Approval → Admin Final Approval
+    // Approval workflow (different for staff and student)
+    // STUDENT: student → staff (intermediate) → hod (final)
+    // STAFF: staff → hod (intermediate) → admin (final)
+    
+    // For STUDENT workflow: staff review
+    staffStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    staffComments: String,
+    
+    // For STAFF workflow: hod review
     hodStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
+    hodComments: String,
+    
+    // For STAFF workflow: admin final review
     adminStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
-
-    // Comments at each stage
-    hodComments: String,
     adminComments: String,
 
     // For staff: substitute teacher assignment
@@ -77,10 +88,12 @@ const leaveSchema = new mongoose.Schema(
     staffReference: String,
 
     // Workflow stage tracking
+    // STUDENT: student_pending → staff_pending → staff_approved/rejected → hod_pending → hod_approved/rejected
+    // STAFF: staff_pending → hod_pending → hod_approved/rejected → admin_pending → admin_approved/rejected
     currentStage: {
       type: String,
-      enum: ['hod_pending', 'hod_approved', 'admin_pending', 'admin_approved', 'admin_rejected', 'hod_rejected'],
-      default: 'hod_pending',
+      enum: ['student_pending', 'staff_pending', 'staff_approved', 'staff_rejected', 'hod_pending', 'hod_approved', 'hod_rejected', 'admin_pending', 'admin_approved', 'admin_rejected'],
+      default: 'student_pending',
     },
 
     submittedDate: {

@@ -38,7 +38,9 @@ const validateLeaveRequest = (startDate, endDate, days) => {
   return { valid: true };
 };
 
-// Create a leave request (staff or student)
+// Create a leave request (staff or student with different workflows)
+// STUDENT: student → staff (intermediate) → hod (final)
+// STAFF: staff → hod (intermediate) → admin (final)
 exports.createLeaveRequest = async (req, res) => {
   try {
     const { applicantType, applicantId, applicantName, department, leaveType, startDate, endDate, days, reason, priority } = req.body;
@@ -59,7 +61,25 @@ exports.createLeaveRequest = async (req, res) => {
       return res.status(400).json({ message: validation.message });
     }
 
-    // Create leave request
+    // Create leave request with workflow-specific initial stages
+    let currentStage, statusFields;
+    
+    if (applicantType === 'student') {
+      // Student workflow: student → staff → hod
+      currentStage = 'student_pending';
+      statusFields = {
+        staffStatus: 'pending',
+        hodStatus: 'pending',
+      };
+    } else {
+      // Staff workflow: staff → hod → admin
+      currentStage = 'staff_pending';
+      statusFields = {
+        hodStatus: 'pending',
+        adminStatus: 'pending',
+      };
+    }
+
     const leaveRequest = new Leave({
       applicantType,
       applicantId,
@@ -71,20 +91,19 @@ exports.createLeaveRequest = async (req, res) => {
       days,
       reason,
       priority: priority || 'medium',
-      // Workflow: Directly to HOD (no staff approval stage)
-      hodStatus: 'pending',
-      adminStatus: 'pending',
-      currentStage: 'hod_pending',
+      currentStage,
+      ...statusFields,
       submittedDate: new Date(),
     });
 
     await leaveRequest.save();
 
     // Send notification
+    const nextApprover = applicantType === 'student' ? 'Staff' : 'HOD';
     await sendNotification(
       applicantId,
       'Leave Request Submitted',
-      `Your ${leaveType} leave request for ${days} days (${startDate} to ${endDate}) has been submitted and is pending approval.`
+      `Your ${leaveType} leave request for ${days} days (${startDate} to ${endDate}) has been submitted and is pending approval by ${nextApprover}.`
     );
 
     res.status(201).json({ message: 'Leave request created successfully', leaveRequest });
@@ -93,7 +112,7 @@ exports.createLeaveRequest = async (req, res) => {
   }
 };
 
-// Get all leave requests (admin/HOD)
+// Get all leave requests
 exports.getAllLeaveRequests = async (req, res) => {
   try {
     const leaveRequests = await Leave.find().sort({ submittedDate: -1 });
@@ -114,13 +133,12 @@ exports.getLeaveRequestsByApplicant = async (req, res) => {
   }
 };
 
-// Get pending leave requests for HOD (same for all staff/student requests in their department)
-exports.getPendingLeaveRequestsForHOD = async (req, res) => {
+// Get pending leave requests for Staff (only for student leaves)
+exports.getPendingLeaveRequestsForStaff = async (req, res) => {
   try {
-    const { department } = req.params;
     const leaveRequests = await Leave.find({
-      department,
-      hodStatus: 'pending'
+      applicantType: 'student',
+      staffStatus: 'pending'
     }).sort({ submittedDate: -1 });
     res.json(leaveRequests);
   } catch (error) {
@@ -128,10 +146,28 @@ exports.getPendingLeaveRequestsForHOD = async (req, res) => {
   }
 };
 
-// Get pending leave requests for Admin (same for all staff/student requests)
+// Get pending leave requests for HOD (both student and staff at final stage)
+exports.getPendingLeaveRequestsForHOD = async (req, res) => {
+  try {
+    const { department } = req.params;
+    const leaveRequests = await Leave.find({
+      department,
+      $or: [
+        { applicantType: 'student', staffStatus: 'approved', hodStatus: 'pending' }, // Student after staff approval
+        { applicantType: 'staff', hodStatus: 'pending' } // Staff direct to HOD
+      ]
+    }).sort({ submittedDate: -1 });
+    res.json(leaveRequests);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get pending leave requests for Admin (only for staff leaves)
 exports.getPendingLeaveRequestsForAdmin = async (req, res) => {
   try {
     const leaveRequests = await Leave.find({
+      applicantType: 'staff',
       hodStatus: 'approved',
       adminStatus: 'pending'
     }).sort({ submittedDate: -1 });
@@ -141,7 +177,57 @@ exports.getPendingLeaveRequestsForAdmin = async (req, res) => {
   }
 };
 
-// Approve or reject at HOD level (same for both staff and student)
+// Staff approves/rejects student leave (intermediate stage for students only)
+exports.updateStaffStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, comments } = req.body;
+
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Must be "approved" or "rejected"' });
+    }
+
+    const leaveRequest = await Leave.findById(id);
+    if (!leaveRequest) {
+      return res.status(404).json({ message: 'Leave request not found' });
+    }
+
+    if (leaveRequest.applicantType !== 'student') {
+      return res.status(400).json({ message: 'Staff can only approve student leave requests' });
+    }
+
+    leaveRequest.staffStatus = status;
+    if (comments) leaveRequest.staffComments = comments;
+
+    if (status === 'approved') {
+      leaveRequest.currentStage = 'staff_approved';
+      
+      // Send notification of staff approval - moving to HOD
+      await sendNotification(
+        leaveRequest.applicantId,
+        '✅ Leave Approved by Staff',
+        `Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days (${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}) has been APPROVED by Staff. It is now pending final approval from HOD.`
+      );
+    } else {
+      leaveRequest.currentStage = 'staff_rejected';
+      
+      // Send notification of staff rejection
+      await sendNotification(
+        leaveRequest.applicantId,
+        '❌ Leave Rejected by Staff',
+        `Your ${leaveRequest.leaveType} leave request has been REJECTED by Staff.\nReason: ${comments || 'No reason provided'}`
+      );
+    }
+
+    await leaveRequest.save();
+
+    res.json({ message: `Student leave request ${status} by Staff`, leaveRequest });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// HOD approves/rejects leave (final stage for students, intermediate for staff)
 exports.updateHODStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -156,27 +242,48 @@ exports.updateHODStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave request not found' });
     }
 
+    // For students: ensure staff already approved
+    if (leaveRequest.applicantType === 'student' && leaveRequest.staffStatus !== 'approved') {
+      return res.status(400).json({ message: 'Student leave must be approved by Staff before HOD approval' });
+    }
+
     leaveRequest.hodStatus = status;
     if (comments) leaveRequest.hodComments = comments;
-    
+
     if (status === 'approved') {
-      leaveRequest.currentStage = 'hod_approved';
-      
-      if (substituteTeacher && leaveRequest.applicantType === 'staff') {
-        leaveRequest.substituteTeacher = substituteTeacher;
-        leaveRequest.substituteStatus = 'pending';
+      // For student: this is final approval
+      if (leaveRequest.applicantType === 'student') {
+        leaveRequest.currentStage = 'hod_approved';
+        
+        await sendNotification(
+          leaveRequest.applicantId,
+          '✅ Leave APPROVED - Final Confirmation',
+          `🎉 Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days (${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}) has been FINALLY APPROVED by HOD.\n\nYour leave is now confirmed.`
+        );
+      } 
+      // For staff: moving to admin
+      else {
+        leaveRequest.currentStage = 'hod_approved';
+        
+        if (substituteTeacher) {
+          leaveRequest.substituteTeacher = substituteTeacher;
+          leaveRequest.substituteStatus = 'pending';
+        }
+        
+        await sendNotification(
+          leaveRequest.applicantId,
+          '✅ Leave Approved by HOD',
+          `Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days (${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}) has been APPROVED by HOD. It is now pending final approval from Admin.`
+        );
+      }
+    } else {
+      // Rejection - final for both students and staff
+      if (leaveRequest.applicantType === 'student') {
+        leaveRequest.currentStage = 'hod_rejected';
+      } else {
+        leaveRequest.currentStage = 'hod_rejected';
       }
       
-      // Send notification of HOD approval
-      await sendNotification(
-        leaveRequest.applicantId,
-        '✅ Leave Approved by HOD',
-        `Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days (${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}) has been APPROVED by HOD. It is now pending final approval from Admin.`
-      );
-    } else {
-      leaveRequest.currentStage = 'hod_rejected';
-      
-      // Send notification of HOD rejection
       await sendNotification(
         leaveRequest.applicantId,
         '❌ Leave Rejected by HOD',
@@ -186,13 +293,14 @@ exports.updateHODStatus = async (req, res) => {
 
     await leaveRequest.save();
 
-    res.json({ message: `Leave request ${status} at HOD level`, leaveRequest });
+    const roleMessage = leaveRequest.applicantType === 'student' ? 'Student leave' : 'Staff leave at HOD level';
+    res.json({ message: `${roleMessage} request ${status}`, leaveRequest });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Approve or reject at Admin level (same for both staff and student)
+// Admin approves/rejects staff leave (final stage for staff only)
 exports.updateAdminStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -207,9 +315,13 @@ exports.updateAdminStatus = async (req, res) => {
       return res.status(404).json({ message: 'Leave request not found' });
     }
 
+    if (leaveRequest.applicantType !== 'staff') {
+      return res.status(400).json({ message: 'Admin can only approve staff leave requests' });
+    }
+
     // Ensure HOD has already approved
     if (leaveRequest.hodStatus !== 'approved') {
-      return res.status(400).json({ message: 'Leave request must be HOD approved before Admin can approve' });
+      return res.status(400).json({ message: 'Staff leave request must be HOD approved before Admin can approve' });
     }
 
     leaveRequest.adminStatus = status;
@@ -222,7 +334,7 @@ exports.updateAdminStatus = async (req, res) => {
       await sendNotification(
         leaveRequest.applicantId,
         '✅ Leave APPROVED - Final Confirmation',
-        `🎉 Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days has been FINALLY APPROVED by Admin.\n\nDates: ${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}\n\nYour leave is now confirmed. ${leaveRequest.applicantType === 'staff' ? 'A substitute teacher has been assigned if applicable.' : ''}`
+        `🎉 Your ${leaveRequest.leaveType} leave for ${leaveRequest.days} days has been FINALLY APPROVED by Admin.\n\nDates: ${leaveRequest.startDate.toDateString()} to ${leaveRequest.endDate.toDateString()}\n\nYour leave is now confirmed. ${leaveRequest.substituteTeacher ? `Substitute teacher assigned: ${leaveRequest.substituteTeacher}` : ''}`
       );
     } else {
       leaveRequest.currentStage = 'admin_rejected';
@@ -237,7 +349,7 @@ exports.updateAdminStatus = async (req, res) => {
 
     await leaveRequest.save();
 
-    res.json({ message: `Leave request ${status} at admin level`, leaveRequest });
+    res.json({ message: `Staff leave request ${status} by Admin (FINAL)`, leaveRequest });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -251,10 +363,9 @@ exports.getLeaveStatistics = async (req, res) => {
         $group: {
           _id: '$applicantType',
           totalRequests: { $sum: 1 },
-          approved: { $sum: { $cond: [{ $eq: ['$currentStage', 'admin_approved'] }, 1, 0] } },
-          rejected: { $sum: { $cond: [{ $in: ['$currentStage', ['admin_rejected', 'hod_rejected']] }, 1, 0] } },
-          pending_hod: { $sum: { $cond: [{ $eq: ['$currentStage', 'hod_pending'] }, 1, 0] } },
-          pending_admin: { $sum: { $cond: [{ $eq: ['$currentStage', 'admin_pending'] }, 1, 0] } },
+          approved: { $sum: { $cond: [{ $in: ['$currentStage', ['hod_approved', 'admin_approved']] }, 1, 0] } },
+          rejected: { $sum: { $cond: [{ $in: ['$currentStage', ['staff_rejected', 'hod_rejected', 'admin_rejected']] }, 1, 0] } },
+          pending: { $sum: { $cond: [{ $in: ['$currentStage', ['student_pending', 'staff_pending', 'staff_approved']] }, 1, 0] } },
         },
       },
     ]);
