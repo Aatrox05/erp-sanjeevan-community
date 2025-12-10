@@ -35,3 +35,4 @@ const sendNotification = async (userId, title, message) => {
 };
 
 module.exports = sendNotification;
+

@@ -30,3 +30,4 @@ router.put('/:id/admin-status', leaveController.updateAdminStatus);
 router.get('/stats/summary', leaveController.getLeaveStatistics);
 
 module.exports = router;
+

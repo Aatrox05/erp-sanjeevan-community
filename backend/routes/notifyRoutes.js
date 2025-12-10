@@ -10,3 +10,4 @@ router.put('/:id/read', authMiddleware, notifyController.markAsRead);
 router.delete('/:id', authMiddleware, notifyController.deleteNotification);
 
 module.exports = router;
+
