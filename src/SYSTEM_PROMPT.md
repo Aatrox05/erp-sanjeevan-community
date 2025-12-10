@@ -1,4 +1,4 @@
-# College Management System - Complete System Prompt
+# ERP system sanjeevan - Complete System Prompt
 
 ## System Overview
 A comprehensive college management system with three distinct user roles (Staff, HOD, and Super Admin) featuring a complete authentication system, two-stage leave approval workflow, substitute teacher assignment, and real-time notifications. Built with React, TypeScript, Tailwind CSS, and shadcn/ui components.

@@ -30,6 +30,7 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [selectedDate, setSelectedDate] = useState<Date>();
   const { 
+    leaveRequests,
     getStudentLeaveRequestsForStaff, 
     updateLeaveRequest, 
     addNotification, 
@@ -38,7 +39,8 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
     addSyllabusDraft,
     submitSyllabusToHOD,
     updateSyllabus,
-    getSyllabiForStaff
+    getSyllabiForStaff,
+    addLeaveRequest
   } = useLeaveContext();
 
   // Demo staff identity (since app uses demo logins)
@@ -285,65 +287,144 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
     );
   };
 
+  // Controlled leave form for staff (same logic as student)
+  const [staffLeaveForm, setStaffLeaveForm] = useState({
+    leaveType: '',
+    startDate: '',
+    endDate: '',
+    days: 1,
+    reason: '',
+    priority: 'low' as 'low' | 'medium' | 'high',
+    department: 'Computer Science'
+  });
+
+  const getStaffLeaveRequests = () => {
+    // Helper to get staff's own leave requests from context
+    return leaveRequests.filter((req: any) => req.requestedBy === 'staff' && req.staffId === staffId);
+  };
+
+  const submitStaffLeave = () => {
+    if (!staffLeaveForm.leaveType || !staffLeaveForm.startDate || !staffLeaveForm.endDate || !staffLeaveForm.reason) return;
+
+    addLeaveRequest({
+      staffName,
+      staffId,
+      department: staffLeaveForm.department,
+      leaveType: staffLeaveForm.leaveType,
+      startDate: staffLeaveForm.startDate,
+      endDate: staffLeaveForm.endDate,
+      days: staffLeaveForm.days,
+      reason: staffLeaveForm.reason,
+      priority: staffLeaveForm.priority,
+      requestedBy: 'staff'
+    } as any);
+
+    addNotification({
+      userId: 'hod',
+      title: 'New Leave Request Submitted',
+      message: `${staffName} submitted a ${staffLeaveForm.leaveType} (${staffLeaveForm.startDate} to ${staffLeaveForm.endDate})`,
+      type: 'info',
+      read: false
+    });
+
+    setStaffLeaveForm({ leaveType: '', startDate: '', endDate: '', days: 1, reason: '', priority: 'low', department: staffLeaveForm.department });
+  };
+
   const renderLeaveForm = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <PlusCircle className="w-5 h-5" />
-          Apply for Leave
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="leave-type">Leave Type</Label>
-            <Select>
-              <SelectTrigger>
-                <SelectValue placeholder="Select leave type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sick">Sick Leave</SelectItem>
-                <SelectItem value="casual">Casual Leave</SelectItem>
-                <SelectItem value="personal">Personal Leave</SelectItem>
-                <SelectItem value="emergency">Emergency Leave</SelectItem>
-              </SelectContent>
-            </Select>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PlusCircle className="w-5 h-5" />
+            Apply for Leave
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Leave Type</Label>
+              <Select onValueChange={(v) => setStaffLeaveForm({ ...staffLeaveForm, leaveType: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Sick Leave">Sick Leave</SelectItem>
+                  <SelectItem value="Personal Leave">Personal Leave</SelectItem>
+                  <SelectItem value="Emergency Leave">Emergency Leave</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select onValueChange={(v) => setStaffLeaveForm({ ...staffLeaveForm, priority: v as any })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Start Date</Label>
+              <Input type="date" value={staffLeaveForm.startDate} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, startDate: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>End Date</Label>
+              <Input type="date" value={staffLeaveForm.endDate} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, endDate: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Days</Label>
+              <Input type="number" min={1} value={staffLeaveForm.days} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, days: Number(e.target.value) })} />
+            </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="days">Number of Days</Label>
-            <Input type="number" placeholder="Enter number of days" />
+            <Label>Reason</Label>
+            <Textarea placeholder="Provide a brief reason for your leave request..." className="min-h-[100px]" value={staffLeaveForm.reason} onChange={(e) => setStaffLeaveForm({ ...staffLeaveForm, reason: e.target.value })} />
           </div>
-        </div>
+          <div className="flex gap-3">
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={submitStaffLeave}>Submit Application</Button>
+            <Button variant="outline">Save as Draft</Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="start-date">Start Date</Label>
-            <Input type="date" />
+      <Card>
+        <CardHeader>
+          <CardTitle>My Leave Requests</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {getStaffLeaveRequests().length === 0 ? (
+              <p className="text-sm text-gray-600">No leave requests yet.</p>
+            ) : (
+              getStaffLeaveRequests().map((req: any) => (
+                <div key={req.id} className="p-4 border rounded-lg flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{req.leaveType} • {req.startDate} to {req.endDate} ({req.days} days)</p>
+                    <p className="text-sm text-gray-600">{req.reason}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={req.hodStatus === 'approved' ? 'bg-green-100 text-green-700' : req.hodStatus === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}>
+                      HOD: {(req.hodStatus || 'pending').toUpperCase()}
+                    </Badge>
+                    {req.hodStatus === 'approved' && (
+                      <Badge className={req.adminStatus === 'approved' ? 'bg-green-100 text-green-700' : req.adminStatus === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}>
+                        Admin: {(req.adminStatus || 'pending').toUpperCase()}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="end-date">End Date</Label>
-            <Input type="date" />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="reason">Reason for Leave</Label>
-          <Textarea 
-            placeholder="Please provide a brief reason for your leave request..."
-            className="min-h-[100px]"
-          />
-        </div>
-
-        <div className="flex gap-3">
-          <Button className="bg-blue-600 hover:bg-blue-700">
-            Submit Application
-          </Button>
-          <Button variant="outline">
-            Save as Draft
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 
   const renderCalendar = () => (
