@@ -303,31 +303,54 @@ export function StaffDashboard({ onBack }: StaffDashboardProps) {
     return leaveRequests.filter((req: any) => req.requestedBy === 'staff' && req.staffId === staffId);
   };
 
-  const submitStaffLeave = () => {
-    if (!staffLeaveForm.leaveType || !staffLeaveForm.startDate || !staffLeaveForm.endDate || !staffLeaveForm.reason) return;
+  const submitStaffLeave = async () => {
+    if (!staffLeaveForm.leaveType || !staffLeaveForm.startDate || !staffLeaveForm.endDate || !staffLeaveForm.reason) {
+      alert('Please fill in all required fields');
+      return;
+    }
 
-    addLeaveRequest({
-      staffName,
-      staffId,
-      department: staffLeaveForm.department,
-      leaveType: staffLeaveForm.leaveType,
-      startDate: staffLeaveForm.startDate,
-      endDate: staffLeaveForm.endDate,
-      days: staffLeaveForm.days,
-      reason: staffLeaveForm.reason,
-      priority: staffLeaveForm.priority,
-      requestedBy: 'staff'
-    } as any);
+    try {
+      const response = await fetch('http://localhost:3001/api/leaves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicantType: 'staff',
+          applicantId: staffId,
+          applicantName: staffName,
+          department: staffLeaveForm.department,
+          leaveType: staffLeaveForm.leaveType,
+          startDate: staffLeaveForm.startDate,
+          endDate: staffLeaveForm.endDate,
+          days: staffLeaveForm.days,
+          reason: staffLeaveForm.reason,
+          priority: staffLeaveForm.priority
+        })
+      });
 
-    addNotification({
-      userId: 'hod',
-      title: 'New Leave Request Submitted',
-      message: `${staffName} submitted a ${staffLeaveForm.leaveType} (${staffLeaveForm.startDate} to ${staffLeaveForm.endDate})`,
-      type: 'info',
-      read: false
-    });
+      if (!response.ok) {
+        const error = await response.json();
+        alert('Error: ' + error.message);
+        return;
+      }
 
-    setStaffLeaveForm({ leaveType: '', startDate: '', endDate: '', days: 1, reason: '', priority: 'low', department: staffLeaveForm.department });
+      const data = await response.json();
+      console.log('Leave request submitted:', data);
+
+      // Show success notification
+      addNotification({
+        userId: staffId,
+        title: '✅ Leave Request Submitted',
+        message: `Your ${staffLeaveForm.leaveType} (${staffLeaveForm.startDate} to ${staffLeaveForm.endDate}) has been submitted and is pending HOD approval.`,
+        type: 'success',
+        read: false
+      });
+
+      // Reset form
+      setStaffLeaveForm({ leaveType: '', startDate: '', endDate: '', days: 1, reason: '', priority: 'low', department: staffLeaveForm.department });
+    } catch (error: any) {
+      console.error('Error submitting leave:', error);
+      alert('Failed to submit leave request: ' + error.message);
+    }
   };
 
   const renderLeaveForm = () => (
